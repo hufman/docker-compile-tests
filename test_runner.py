@@ -92,7 +92,7 @@ class ParentTestCompare(unittest.TestCase):
 	def compare_images(self, truth, question):
 		truth_data = self.load_image_info(truth)
 		question_data = self.load_image_info(question)
-		important_keys = [ 'Cmd', 'Entrypoint', 'Env', 'ExposedParts', 'WorkingDir']
+		important_keys = [ 'Cmd', 'Entrypoint', 'Env', 'ExposedPorts', 'WorkingDir']
 		for key in important_keys:
 			self.assertEqual(truth_data['Config'][key], question_data['Config'][key])
 

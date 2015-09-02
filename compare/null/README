@@ -1,0 +1,2 @@
+A simple dockerfile
+The base image doesn't have a CMD or ENTRYPOINT

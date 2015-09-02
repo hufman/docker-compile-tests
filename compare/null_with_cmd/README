@@ -1,0 +1,2 @@
+A simple dockerfile
+The base image only has a CMD defined

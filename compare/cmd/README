@@ -1,0 +1,2 @@
+Using a base image without a CMD or ENTRYPOINT
+Test what happens when we set only an CMD
