@@ -6,6 +6,8 @@ import os.path
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 
 logger = logging.getLogger('TestRunner')
@@ -53,6 +55,20 @@ class MetaTestCompare(type):
 			dict[test_name] = test
 		return type.__new__(mcs, name, bases, dict)
 
+def capture_stdout(orig):
+	@functools.wraps(orig)
+	def func(*args, **kwargs):
+		oldstdout = sys.stdout
+		with tempfile.TemporaryFile() as tmp:
+			sys.stdout = tmp
+			try:
+				return orig(*args, **kwargs)
+			finally:
+				sys.stdout = oldstdout
+				tmp.flush()
+				tmp.seek(0)
+				sys.stdout.write(tmp.read().decode('utf-8'))
+	return func
 # build a docker project with both Docker and docker-compile.pl
 # look for any differences
 class ParentTestCompare(unittest.TestCase):
@@ -60,20 +76,23 @@ class ParentTestCompare(unittest.TestCase):
 		self.cwd = self.testpath
 		self.cleanup_images = []
 	# helper methods to run external commands
+	@capture_stdout
 	def run_docker(self, *args):
 		full_args = [DOCKER]
 		full_args.extend(args)
-		ret = subprocess.call(full_args, cwd=self.cwd)
+		ret = subprocess.call(full_args, cwd=self.cwd, stdout=sys.stdout, stderr=subprocess.STDOUT)
 		return ret
+	@capture_stdout
 	def run_docker_build(self, name):
 		args = [DOCKER, 'build', '--tag=%s' % (name,), '.']
-		ret = subprocess.call(args, cwd=self.cwd)
+		ret = subprocess.call(args, cwd=self.cwd, stdout=sys.stdout, stderr=subprocess.STDOUT)
 		self.cleanup_images.append(name)
 		self.assertEqual(0, ret)
 		return ret
+	@capture_stdout
 	def run_compile_build(self, name):
 		args = [COMPILE, '-t', name]
-		ret = subprocess.call(args, cwd=self.cwd)
+		ret = subprocess.call(args, cwd=self.cwd, stdout=sys.stdout, stderr=subprocess.STDOUT)
 		self.cleanup_images.append(name)
 		self.assertEqual(0, ret)
 		return ret
