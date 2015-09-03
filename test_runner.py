@@ -112,7 +112,7 @@ class ParentTestCompare(unittest.TestCase):
 
 # look for differences in environment handling
 class TestCompare(with_metaclass(MetaTestCompare, ParentTestCompare)):
-	subdir = os.path.join('compare')
+	subdir = os.path.join('tests')
 
 if __name__ == '__main__':
 	unittest.main()
