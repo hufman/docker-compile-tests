@@ -40,7 +40,7 @@ class MetaTestCompare(type):
 		"""
 		def gen_test(directory):
 			def test(self):
-				self.do_docker_compare(directory)
+				self.check_directory(directory)
 			return test
 		testpath = os.path.join(BASEPATH, dict['subdir'])
 		dict['testpath'] = testpath
@@ -75,6 +75,8 @@ class ParentTestCompare(unittest.TestCase):
 	def setUp(self):
 		self.cwd = self.testpath
 		self.cleanup_images = []
+		self.delete_dockerfile = False
+
 	# helper methods to run external commands
 	@capture_stdout
 	def run_docker(self, *args):
@@ -113,21 +115,58 @@ class ParentTestCompare(unittest.TestCase):
 		question_data = self.load_image_info(question)
 		important_keys = [ 'Cmd', 'Entrypoint', 'Env', 'ExposedPorts', 'WorkingDir']
 		for key in important_keys:
-			self.assertEqual(truth_data['Config'][key], question_data['Config'][key])
+			self.assertEqual(truth_data['Config'][key], question_data['Config'][key], key)
 
-	def do_docker_compare(self, directory):
-		logger.info("Testing %s"%(directory,))
-		self.directory = directory
-		self.prepare_names()
+	def do_single_step(self):
+		# there is a single Dockerfile in the directory, run it
+		print("self.name here: %s" % (self.name,))
 		docker_image = "%s_docker" % (self.name,)
 		compile_image = "%s_compile" % (self.name,)
+		print("Building %s" % (docker_image,))
 		self.run_docker_build(docker_image)
 		self.run_compile_build(compile_image)
 		self.compare_images(docker_image, compile_image)
 
+	def copy_dockerfile(self, filename, from_image):
+		oldpath = os.path.join(self.directory, filename)
+		newpath = os.path.join(self.directory, "Dockerfile")
+		with open(oldpath, 'r') as file:
+			contents = file.readlines()
+		if from_image:
+			contents = [l if not l.upper().startswith("FROM") else "FROM %s" % (from_image,) for l in contents]
+		print(contents)
+		with open(newpath, 'w') as file:
+			file.writelines(contents)
+		self.delete_dockerfile = True
+
+	def do_multiple_steps(self):
+		entries = os.listdir(self.directory)
+		dockerfiles = [e for e in entries if e.lower().startswith("dockerfile")]
+		previous_image = None
+		index = 0
+		for dockerfile in sorted(dockerfiles):
+			index = index + 1
+			self.name = "%s_%s" % (clean_method_name(self.testdir), index)
+			print("self.name out here: %s" % (self.name,))
+			self.copy_dockerfile(dockerfile, previous_image)
+			self.do_single_step()
+			previous_image = "%s_docker" % (self.name,)
+
+	def check_directory(self, directory):
+		logger.info("Testing %s"%(directory,))
+		self.directory = directory
+		self.prepare_names()
+		if os.path.exists(os.path.join(self.directory, 'Dockerfile')) and \
+		   not os.path.islink(os.path.join(self.directory, 'Dockerfile')):
+			self.do_single_step()
+		else:
+			self.do_multiple_steps()
+
 	def tearDown(self):
 		for image in self.cleanup_images:
 			self.run_docker('rmi', '-f', image)
+		if self.delete_dockerfile:
+			os.unlink(os.path.join(self.directory, 'Dockerfile'))
 
 # look for differences in environment handling
 class TestCompare(with_metaclass(MetaTestCompare, ParentTestCompare)):
