@@ -140,6 +140,7 @@ close SETUP;
 chmod 0755, "$tmpdir/setup.sh";
 
 our @run = ('docker', 'run', "--cidfile=$tmpdir/CID", '-v', "$tmpdir:/.data", $from, "/.data/setup.sh");
+splice @run, 2, 0, '--entrypoint=/bin/sh' if $changes{ENTRYPOINT};
 print "*** ", join(' ', @run), "\n";
 system(@run) == 0 or die;
 
