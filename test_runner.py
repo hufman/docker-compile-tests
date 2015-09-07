@@ -1,3 +1,4 @@
+import filecmp
 import functools
 import json
 import logging
@@ -110,12 +111,43 @@ class ParentTestCompare(unittest.TestCase):
 		self.testdir = self.directory[len(BASEPATH)+1:]
 		self.name = clean_method_name(self.testdir)
 
+	def prepare_results(self):
+		self.results_path = os.path.join(BASEPATH, 'results', self.testdir)
+		self.results_truth_path = os.path.join(self.results_path, 'truth')
+		self.results_question_path = os.path.join(self.results_path, 'question')
+		if os.path.isdir(self.results_truth_path):
+			shutil.rmtree(self.results_truth_path)
+		if os.path.isdir(self.results_question_path):
+			shutil.rmtree(self.results_question_path)
+		os.makedirs(self.results_truth_path)
+		os.makedirs(self.results_question_path)
+
+	def copy_results(self, image_name, output_dir):
+		run_docker = ["run", "--rm"]
+		mount = ["-v=%s:/results_out:rw" % (output_dir,)]
+		entrypoint = ["--entrypoint=/bin/sh"]
+		image = [image_name]
+		command = ["test -x /results && cp -r /results/* /results_out"]
+		full_command = run_docker + mount + entrypoint + image + command
+		self.run_docker(*full_command)
+
 	def compare_images(self, truth, question):
 		truth_data = self.load_image_info(truth)
 		question_data = self.load_image_info(question)
+		if isinstance(truth_data['Config']['Env'], list):
+			truth_data['Config']['Env'].sort()
+		if isinstance(question_data['Config']['Env'], list):
+			question_data['Config']['Env'].sort()
 		important_keys = [ 'Cmd', 'Entrypoint', 'Env', 'ExposedPorts', 'WorkingDir']
 		for key in important_keys:
 			self.assertEqual(truth_data['Config'][key], question_data['Config'][key], key)
+
+	def compare_results(self, truth_dir, question_dir):
+		dircmp = filecmp.dircmp(truth_dir, question_dir)
+		self.assertEqual([], dircmp.left_only, "Files missing from the compile results")
+		self.assertEqual([], dircmp.right_only, "Extra files from the compile results")
+		self.assertEqual([], dircmp.diff_files, "Files should not be different")
+		dircmp.report()
 
 	def do_single_step(self):
 		# there is a single Dockerfile in the directory, run it
@@ -126,6 +158,9 @@ class ParentTestCompare(unittest.TestCase):
 		self.run_docker_build(docker_image)
 		self.run_compile_build(compile_image)
 		self.compare_images(docker_image, compile_image)
+		self.copy_results(docker_image, self.results_truth_path)
+		self.copy_results(compile_image, self.results_question_path)
+		self.compare_results(self.results_truth_path, self.results_question_path)
 
 	def copy_dockerfile(self, filename, from_image):
 		oldpath = os.path.join(self.directory, filename)
@@ -156,6 +191,7 @@ class ParentTestCompare(unittest.TestCase):
 		logger.info("Testing %s"%(directory,))
 		self.directory = directory
 		self.prepare_names()
+		self.prepare_results()
 		if os.path.exists(os.path.join(self.directory, 'Dockerfile')) and \
 		   not os.path.islink(os.path.join(self.directory, 'Dockerfile')):
 			self.do_single_step()
